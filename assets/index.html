@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS</title>
+<!-- Socket.IO bundled inline to avoid CDN dependency -->
+<script>
+// Minimal Socket.IO client (self-contained)
+</script>
+<script src="/socket.io.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap');
+
+  :root {
+    --bg:        #080c0f;
+    --bg2:       #0d1317;
+    --bg3:       #111820;
+    --border:    #1e2d38;
+    --accent:    #00d4ff;
+    --accent2:   #00ff9d;
+    --accent3:   #ff6b35;
+    --warn:      #ffcc00;
+    --text:      #c8dde8;
+    --text-dim:  #4a6070;
+    --text-bright:#eef6fb;
+    --red:       #ff4455;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Title bar drag area ── */
+  .titlebar {
+    -webkit-app-region: drag;
+    background: #050809;
+    border-bottom: 1px solid #0d1a22;
+    padding: 0 20px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 100;
+  }
+  .titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .titlebar-logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: 6px;
+    color: var(--accent);
+  }
+  .titlebar-sub {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+  }
+  .engine-pill {
+    -webkit-app-region: no-drag;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--bg2);
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+  }
+  .engine-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent2);
+    box-shadow: 0 0 6px var(--accent2);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* ── Main layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .section-header {
+    padding: 14px 18px 10px;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Directory picker ── */
+  .dir-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .dir-label { font-size: 10px; color: var(--text-dim); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+
+  .dir-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .dir-input {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-bright);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.2s;
+    user-select: text;
+  }
+  .dir-input:focus { border-color: var(--accent); }
+  .dir-input::placeholder { color: var(--text-dim); }
+
+  .btn {
+    border: none; border-radius: 4px; cursor: pointer;
+    font-family: inherit; font-size: 11px; font-weight: 700;
+    letter-spacing: 1px; padding: 7px 14px;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .btn-browse {
+    background: var(--bg3);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    padding: 7px 10px;
+  }
+  .btn-browse:hover { color: var(--text); border-color: var(--accent); }
+  .btn-scan {
+    background: var(--accent);
+    color: #000;
+  }
+  .btn-scan:hover:not(:disabled) { background: #33ddff; box-shadow: 0 0 16px rgba(0,212,255,0.3); }
+  .btn-execute {
+    background: var(--accent2);
+    color: #000;
+    width: 100%;
+    padding: 10px;
+  }
+  .btn-execute:hover:not(:disabled) { background: #33ffb0; box-shadow: 0 0 16px rgba(0,255,157,0.3); }
+  .btn-reset {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    width: 100%;
+    padding: 8px;
+    margin-top: 6px;
+  }
+  .btn-reset:hover { color: var(--text); border-color: var(--text-dim); }
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .progress-wrap {
+    height: 2px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%; width: 0%; background: var(--accent);
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .progress-text { font-size: 10px; color: var(--text-dim); margin-top: 5px; text-align: center; min-height: 14px; }
+
+  /* ── Stats ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-cell {
+    padding: 12px 16px;
+    border-right: 1px solid var(--border);
+  }
+  .stat-cell:last-child, .stat-cell:nth-child(2) { border-right: none; }
+  .stat-cell:nth-child(3), .stat-cell:nth-child(4) { border-top: 1px solid var(--border); }
+  .stat-label { font-size: 9px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+  .stat-val { font-size: 22px; font-family: 'Syne', sans-serif; font-weight: 800; color: var(--text-bright); margin-top: 2px; }
+  .stat-val.c { color: var(--accent); }
+  .stat-val.g { color: var(--accent2); }
+  .stat-val.o { color: var(--accent3); }
+
+  /* ── Log feed ── */
+  .log-feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .log-entry {
+    display: flex;
+    gap: 8px;
+    padding: 4px 16px;
+    font-size: 11px;
+    line-height: 1.5;
+    border-left: 2px solid transparent;
+  }
+  .log-entry.info  { border-color: var(--accent); }
+  .log-entry.move  { border-color: var(--accent2); }
+  .log-entry.warn  { border-color: var(--warn); }
+  .log-entry.error { border-color: var(--red); }
+  .log-icon { flex-shrink: 0; width: 16px; }
+  .log-text { color: var(--text); }
+  .log-text em { color: var(--accent2); font-style: normal; font-weight: 700; }
+  .log-text code { color: var(--accent); font-size: 10px; background: rgba(0,212,255,0.08); padding: 1px 4px; border-radius: 2px; }
+
+  /* ── Execute panel ── */
+  .exec-panel {
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .exec-info { font-size: 10px; color: var(--text-dim); text-align: center; margin-top: 6px; }
+
+  /* ── Right panel ── */
+  .right-panel { display: flex; flex-direction: column; overflow: hidden; }
+
+  .tab-nav {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 0 16px;
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--text-dim); cursor: pointer; font-family: inherit;
+    font-size: 11px; letter-spacing: 1px; padding: 12px 16px;
+    text-transform: uppercase; transition: all 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { border-bottom-color: var(--accent); color: var(--accent); }
+
+  .tab-content { flex: 1; overflow: hidden; position: relative; }
+  .tab-pane { position: absolute; inset: 0; overflow-y: auto; display: none; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .tab-pane.active { display: block; }
+
+  /* ── Empty states ── */
+  .empty {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; gap: 12px;
+    color: var(--text-dim);
+  }
+  .empty-icon { font-size: 48px; opacity: 0.4; }
+  .empty-text { font-size: 12px; letter-spacing: 1px; }
+
+  /* ── Plan table ── */
+  .plan-table { width: 100%; border-collapse: collapse; }
+  .plan-table thead th {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 10px 14px;
+    position: sticky; top: 0;
+    text-align: left;
+    text-transform: uppercase;
+    z-index: 1;
+  }
+  .plan-table tbody tr {
+    border-bottom: 1px solid rgba(30,45,56,0.5);
+    transition: background 0.1s;
+  }
+  .plan-table tbody tr:hover { background: rgba(0,212,255,0.03); }
+  .plan-table td { padding: 10px 14px; vertical-align: top; }
+  .file-name { color: var(--text-bright); font-size: 12px; font-weight: 700; }
+  .file-reason { color: var(--text-dim); font-size: 10px; margin-top: 2px; line-height: 1.4; }
+  .file-dest { color: var(--text-dim); font-size: 11px; font-family: inherit; }
+  .cat-badge {
+    border: 1px solid;
+    border-radius: 3px;
+    display: inline-block;
+    font-size: 9px;
+    letter-spacing: 1px;
+    padding: 2px 7px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .conf-wrap { display: flex; align-items: center; gap: 6px; }
+  .conf-track { height: 3px; background: var(--border); border-radius: 2px; width: 60px; overflow: hidden; }
+  .conf-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+  .conf-val { font-size: 10px; color: var(--text-dim); width: 30px; }
+
+  /* ── Tree ── */
+  .tree-wrap { padding: 16px; }
+  .tree-node { margin-left: 16px; }
+  .tree-node-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 6px; border-radius: 3px; cursor: pointer;
+    color: var(--text); font-size: 12px;
+    transition: background 0.1s;
+  }
+  .tree-node-row:hover { background: rgba(0,212,255,0.05); }
+  .tree-count {
+    margin-left: auto; font-size: 10px; color: var(--text-dim);
+    background: var(--bg3); padding: 1px 5px; border-radius: 10px;
+  }
+  .tree-children { border-left: 1px solid var(--border); margin-left: 8px; }
+
+  /* ── Summary ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    padding: 20px;
+  }
+  .summary-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    border-left-width: 3px;
+  }
+  .summary-card-label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+  .summary-card-count { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 32px; color: var(--text-bright); }
+  .summary-card-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .decisions-list { padding: 0 20px 20px; }
+  .decision-item {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 10px 0; border-bottom: 1px solid rgba(30,45,56,0.5);
+  }
+  .decision-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .decision-file { color: var(--text-bright); font-size: 12px; font-weight: 700; }
+  .decision-reason { color: var(--text-dim); font-size: 10px; margin-top: 2px; }
+  .decision-dest { font-size: 10px; margin-top: 2px; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<!-- Custom title bar -->
+<div class="titlebar">
+  <div class="titlebar-left">
+    <span class="titlebar-logo">NEXUS</span>
+    <span class="titlebar-sub">FILE INTELLIGENCE SYSTEM</span>
+  </div>
+  <div class="engine-pill">
+    <div class="engine-dot"></div>
+    <span id="engineLabel">LOCAL ENGINE</span>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="section-header">Target Directory</div>
+
+    <div class="dir-section">
+      <div class="dir-label">Select or paste a folder path</div>
+      <div class="dir-row">
+        <input class="dir-input" id="dirInput" type="text" placeholder="C:\Users\you\Downloads" spellcheck="false">
+        <button class="btn btn-browse" id="browseBtn" onclick="browseFolders()" title="Browse for folder">📁</button>
+        <button class="btn btn-scan" id="scanBtn" onclick="startScan()">Scan</button>
+      </div>
+      <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-text" id="progressText"></div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-cell">
+        <div class="stat-label">Files Found</div>
+        <div class="stat-val c" id="statFiles">—</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Planned</div>
+        <div class="stat-val" id="statPlanned">—</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Moved</div>
+        <div class="stat-val g" id="statMoved">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Engine</div>
+        <div class="stat-val o" style="font-size:13px;padding-top:6px" id="statEngine">LOCAL</div>
+      </div>
+    </div>
+
+    <div class="section-header">Live Activity</div>
+    <div class="log-feed" id="logFeed">
+      <div class="log-entry info">
+        <span class="log-icon">⚡</span>
+        <span class="log-text">NEXUS ready — paste a directory path above or click 📁 to browse</span>
+      </div>
+    </div>
+
+    <div class="exec-panel">
+      <button class="btn btn-execute" id="executeBtn" onclick="executeOrganize()" disabled>▶ Execute Organization</button>
+      <button class="btn btn-reset" id="resetBtn" onclick="resetSession()" style="display:none">↺ New Session</button>
+      <div class="exec-info" id="execInfo">Run a scan first to preview the plan</div>
+    </div>
+  </aside>
+
+  <!-- ── Main panel ── -->
+  <main class="right-panel">
+    <nav class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('plan',this)">Move Plan</button>
+      <button class="tab-btn" onclick="switchTab('tree',this)">Directory Tree</button>
+      <button class="tab-btn" onclick="switchTab('summary',this)">Summary</button>
+    </nav>
+
+    <div class="tab-content">
+
+      <!-- Plan -->
+      <div class="tab-pane active" id="tab-plan">
+        <div class="empty" id="planEmpty">
+          <div class="empty-icon">🗂️</div>
+          <div class="empty-text">Scan a directory to see the AI's organization plan</div>
+        </div>
+        <table class="plan-table" id="planTable" style="display:none">
+          <thead>
+            <tr>
+              <th>File &amp; Reasoning</th>
+              <th>Category</th>
+              <th>Destination</th>
+              <th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody id="planBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Tree -->
+      <div class="tab-pane" id="tab-tree">
+        <div class="empty" id="treeEmpty">
+          <div class="empty-icon">🌳</div>
+          <div class="empty-text">Directory tree appears after organizing</div>
+        </div>
+        <div class="tree-wrap" id="treeRoot" style="display:none"></div>
+      </div>
+
+      <!-- Summary -->
+      <div class="tab-pane" id="tab-summary">
+        <div class="empty" id="summaryEmpty">
+          <div class="empty-icon">📊</div>
+          <div class="empty-text">Summary appears after organization is complete</div>
+        </div>
+        <div id="summaryContent" style="display:none">
+          <div class="summary-grid" id="summaryGrid"></div>
+          <div class="decisions-list" id="decisionList"></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+const S = {
+  status: 'idle',
+  files: 0,
+  planned: 0,
+  moved: 0,
+  dirsCreated: 0,
+  plan: [],
+  categories: {},
+  engine: 'local'
+};
+
+// ─── Socket ───────────────────────────────────────────────────────────────────
+const socket = io();
+
+socket.on('connect', () => log('info', '⚡', 'Connected to NEXUS engine'));
+
+socket.on('connected', d => {
+  const ollama = d.engine === 'ollama';
+  document.getElementById('engineLabel').textContent = ollama ? 'OLLAMA LLM' : 'LOCAL ENGINE';
+  document.getElementById('statEngine').textContent = ollama ? 'OLLAMA' : 'LOCAL';
+  S.engine = d.engine;
+  if (!ollama) {
+    log('info', '💡', 'Tip: Install <strong>Ollama</strong> with <code>ollama pull mistral</code> for LLM-quality reasoning');
+  }
+});
+
+socket.on('scan_start', d => {
+  setProgress(2, `Scanning ${d.directory}...`);
+  log('info', '🔍', `Scanning: <em>${esc(d.directory)}</em>`);
+});
+
+socket.on('scan_count', d => {
+  S.files = d.total;
+  document.getElementById('statFiles').textContent = d.total;
+  log('info', '📂', `Found <em>${d.total} files</em> to analyze`);
+});
+
+socket.on('file_analyzed', d => {
+  const pct = Math.round((d.index / d.total) * 85) + 5;
+  setProgress(pct, `Analyzing ${d.index}/${d.total}: ${d.file}`);
+  S.planned = d.index;
+  document.getElementById('statPlanned').textContent = d.index;
+  addPlanRow(d);
+  // Track categories
+  S.categories[d.category] = (S.categories[d.category] || 0) + 1;
+});
+
+socket.on('scan_complete', d => {
+  setProgress(100, `✅ Analysis complete — ${d.plan_count} files planned`);
+  log('move', '✅', `Scan complete. <em>${d.plan_count} files</em> ready to organize.`);
+  document.getElementById('executeBtn').disabled = false;
+  document.getElementById('scanBtn').disabled = false;
+  document.getElementById('execInfo').textContent = `Ready to organize ${d.plan_count} files`;
+  S.status = 'scanned';
+});
+
+socket.on('dir_created', d => log('info', '📁', `Created folder: <code>${esc(d.path)}</code>`));
+
+socket.on('file_moved', d => {
+  S.moved++;
+  document.getElementById('statMoved').textContent = S.moved;
+  log('move', '→', `<em>${esc(d.file)}</em> → <code>${esc(d.to)}</code>`);
+});
+
+socket.on('done', d => {
+  setProgress(100, `✅ Done! ${d.moved} files organized`);
+  log('move', '🎉', `<em>Complete!</em> Moved ${d.moved} files into ${d.dirs_created} folders. Check <code>.nexus/manifest.json</code> to undo.`);
+  document.getElementById('executeBtn').disabled = true;
+  document.getElementById('executeBtn').style.display = 'none';
+  document.getElementById('resetBtn').style.display = 'block';
+  document.getElementById('execInfo').textContent = `Done! ${d.moved} files organized`;
+  S.status = 'done';
+  loadTree();
+  buildSummary();
+});
+
+socket.on('error',      d => log('error', '🚫', d.message));
+socket.on('file_error', d => log('warn',  '⚠️', `Skipped: ${esc(d.file)}`));
+socket.on('move_error', d => log('error', '❌', `Move failed: ${esc(d.error)}`));
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+async function browseFolders() {
+  try {
+    const res = await fetch('/api/browse', { method: 'POST' });
+    const d = await res.json();
+    if (d.path) document.getElementById('dirInput').value = d.path;
+  } catch(e) {
+    log('warn', '⚠️', 'Folder browser unavailable — paste path manually');
+  }
+}
+
+async function startScan() {
+  const dir = document.getElementById('dirInput').value.trim();
+  if (!dir) { log('warn', '⚠️', 'Please enter or browse for a directory'); return; }
+
+  // Reset UI
+  S.plan = []; S.categories = {}; S.moved = 0; S.planned = 0;
+  document.getElementById('planBody').innerHTML = '';
+  document.getElementById('planEmpty').style.display = 'flex';
+  document.getElementById('planTable').style.display = 'none';
+  document.getElementById('treeRoot').style.display = 'none';
+  document.getElementById('treeEmpty').style.display = 'flex';
+  document.getElementById('treeRoot').innerHTML = '';
+  document.getElementById('summaryEmpty').style.display = 'flex';
+  document.getElementById('summaryContent').style.display = 'none';
+  document.getElementById('statFiles').textContent = '—';
+  document.getElementById('statPlanned').textContent = '—';
+  document.getElementById('statMoved').textContent = '0';
+  document.getElementById('executeBtn').disabled = true;
+  document.getElementById('executeBtn').style.display = 'block';
+  document.getElementById('resetBtn').style.display = 'none';
+  document.getElementById('scanBtn').disabled = true;
+  document.getElementById('logFeed').innerHTML = '';
+  setProgress(1, 'Starting scan...');
+
+  const res = await fetch('/api/scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ directory: dir })
+  });
+  const d = await res.json();
+  if (d.error) {
+    log('error', '🚫', d.error);
+    document.getElementById('scanBtn').disabled = false;
+    setProgress(0, '');
+  }
+}
+
+async function executeOrganize() {
+  if (!confirm('Move files according to the plan?\n\nFiles are never deleted. Check .nexus/manifest.json in the target folder to undo.')) return;
+  document.getElementById('executeBtn').disabled = true;
+  S.moved = 0;
+
+  const res = await fetch('/api/execute', { method: 'POST' });
+  const d = await res.json();
+  if (d.error) {
+    log('error', '🚫', d.error);
+    document.getElementById('executeBtn').disabled = false;
+  }
+}
+
+async function resetSession() {
+  await fetch('/api/reset', { method: 'POST' });
+  S.plan = []; S.categories = {}; S.moved = 0; S.planned = 0; S.status = 'idle';
+  document.getElementById('planBody').innerHTML = '';
+  document.getElementById('planEmpty').style.display = 'flex';
+  document.getElementById('planTable').style.display = 'none';
+  document.getElementById('treeRoot').innerHTML = '';
+  document.getElementById('treeRoot').style.display = 'none';
+  document.getElementById('treeEmpty').style.display = 'flex';
+  document.getElementById('summaryEmpty').style.display = 'flex';
+  document.getElementById('summaryContent').style.display = 'none';
+  document.getElementById('statFiles').textContent = '—';
+  document.getElementById('statPlanned').textContent = '—';
+  document.getElementById('statMoved').textContent = '0';
+  document.getElementById('dirInput').value = '';
+  document.getElementById('executeBtn').disabled = true;
+  document.getElementById('executeBtn').style.display = 'block';
+  document.getElementById('resetBtn').style.display = 'none';
+  document.getElementById('execInfo').textContent = 'Run a scan first to preview the plan';
+  setProgress(0, '');
+  switchTab('plan', document.querySelector('.tab-btn'));
+  log('info', '↺', 'Session reset — ready for a new directory');
+}
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+function log(type, icon, html) {
+  const feed = document.getElementById('logFeed');
+  const el = document.createElement('div');
+  el.className = `log-entry ${type}`;
+  el.innerHTML = `<span class="log-icon">${icon}</span><span class="log-text">${html}</span>`;
+  feed.appendChild(el);
+  feed.scrollTop = feed.scrollHeight;
+  while (feed.children.length > 300) feed.removeChild(feed.firstChild);
+}
+
+function setProgress(pct, text) {
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressText').textContent = text;
+}
+
+function addPlanRow(d) {
+  document.getElementById('planEmpty').style.display = 'none';
+  document.getElementById('planTable').style.display = 'table';
+  const tbody = document.getElementById('planBody');
+  const tr = document.createElement('tr');
+  const cc = d.confidence > 0.7 ? '#00ff9d' : d.confidence > 0.4 ? '#ffcc00' : '#ff6b35';
+  const catColor = catCol(d.category);
+  tr.innerHTML = `
+    <td>
+      <div class="file-name">${esc(d.file)}</div>
+      <div class="file-reason">${esc(d.reasoning || '')}</div>
+    </td>
+    <td><span class="cat-badge" style="color:${catColor};border-color:${catColor}44;background:${catColor}11">${esc(d.category)}</span></td>
+    <td><div class="file-dest">${esc(d.destination)}</div></td>
+    <td>
+      <div class="conf-wrap">
+        <div class="conf-track"><div class="conf-fill" style="width:${Math.round(d.confidence*100)}%;background:${cc}"></div></div>
+        <div class="conf-val">${Math.round(d.confidence*100)}%</div>
+      </div>
+    </td>
+  `;
+  tbody.appendChild(tr);
+}
+
+function catCol(cat) {
+  const m = {
+    'Software & Code':'#00d4ff','Finance & Accounting':'#00ff9d',
+    'Legal & Compliance':'#ff6b35','Academic & Research':'#a855f7',
+    'Creative & Media':'#f59e0b','Business & Management':'#3b82f6',
+    'Personal':'#ec4899','Configuration & Data':'#64748b','Uncategorized':'#4a6070'
+  };
+  return m[cat] || '#c8dde8';
+}
+
+async function loadTree() {
+  const dir = document.getElementById('dirInput').value.trim();
+  try {
+    const res = await fetch(`/api/tree?dir=${encodeURIComponent(dir)}`);
+    const tree = await res.json();
+    const root = document.getElementById('treeRoot');
+    root.innerHTML = '';
+    root.style.display = 'block';
+    document.getElementById('treeEmpty').style.display = 'none';
+    renderTree(tree, root);
+  } catch(e) {}
+}
+
+function renderTree(node, container) {
+  if (node.type === 'dir') {
+    const wrap = document.createElement('div');
+    const header = document.createElement('div');
+    header.className = 'tree-node-row';
+    header.innerHTML = `<span>📁</span><span>${esc(node.name)}</span><span class="tree-count">${node.file_count}</span>`;
+    const children = document.createElement('div');
+    children.className = 'tree-children';
+    header.onclick = () => children.style.display = children.style.display === 'none' ? '' : 'none';
+    wrap.appendChild(header);
+    wrap.appendChild(children);
+    container.appendChild(wrap);
+    (node.children || []).forEach(c => renderTree(c, children));
+  } else {
+    const item = document.createElement('div');
+    item.className = 'tree-node-row';
+    item.innerHTML = `<span>${fIcon(node.ext)}</span><span style="color:var(--text-dim)">${esc(node.name)}</span>`;
+    container.appendChild(item);
+  }
+}
+
+function fIcon(ext) {
+  const m = {'.py':'🐍','.js':'📜','.ts':'📘','.html':'🌐','.css':'🎨',
+    '.pdf':'📄','.docx':'📝','.xlsx':'📊','.pptx':'📑','.jpg':'🖼️',
+    '.png':'🖼️','.mp4':'🎬','.mp3':'🎵','.zip':'📦','.json':'⚙️',
+    '.md':'📋','.sh':'⚡','.csv':'📊'};
+  return m[ext] || '📄';
+}
+
+function buildSummary() {
+  document.getElementById('summaryEmpty').style.display = 'none';
+  document.getElementById('summaryContent').style.display = 'block';
+
+  const grid = document.getElementById('summaryGrid');
+  grid.innerHTML = '';
+  Object.entries(S.categories).sort((a,b) => b[1]-a[1]).forEach(([cat, count]) => {
+    const color = catCol(cat);
+    const card = document.createElement('div');
+    card.className = 'summary-card';
+    card.style.borderLeftColor = color;
+    card.innerHTML = `
+      <div class="summary-card-label" style="color:${color}">${esc(cat)}</div>
+      <div class="summary-card-count">${count}</div>
+      <div class="summary-card-sub">files organized</div>
+    `;
+    grid.appendChild(card);
+  });
+
+  const list = document.getElementById('decisionList');
+  list.innerHTML = `<div style="font-size:9px;letter-spacing:3px;color:var(--text-dim);text-transform:uppercase;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:4px">Notable Decisions</div>`;
+  const rows = Array.from(document.querySelectorAll('#planBody tr'));
+  rows.slice(0, 30).forEach(row => {
+    const file = row.querySelector('.file-name')?.textContent || '';
+    const reason = row.querySelector('.file-reason')?.textContent || '';
+    const dest = row.querySelector('.file-dest')?.textContent || '';
+    const cat = row.querySelector('.cat-badge')?.textContent || '';
+    const color = catCol(cat);
+    const el = document.createElement('div');
+    el.className = 'decision-item';
+    el.innerHTML = `
+      <div class="decision-dot" style="background:${color}"></div>
+      <div>
+        <div class="decision-file">${esc(file)}</div>
+        <div class="decision-reason">${esc(reason)}</div>
+        <div class="decision-dest" style="color:${color}">→ ${esc(dest)}</div>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+}
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
