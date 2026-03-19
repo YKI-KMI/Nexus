@@ -7,3 +7,4 @@ openpyxl>=3.1.2
 python-pptx>=0.6.23
 pywebview>=5.0.5
 pyinstaller>=6.0.0
+eventlet>=0.35.0

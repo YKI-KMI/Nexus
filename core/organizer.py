@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import Callable
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 from core.brain import NexusBrain, is_protected_path
 from core.parser import extract_text, get_file_metadata, is_binary_only, describe_binary
@@ -31,9 +32,9 @@ class FileOrganizer:
     then `execute()` to apply them.
     """
 
-    def __init__(self, target_dir: str, emit_fn: Callable = None):
+    def __init__(self, target_dir: str, emit_fn: Callable = None, brain: "NexusBrain" = None):
         self.target_dir = Path(target_dir).resolve()
-        self.brain = NexusBrain()
+        self.brain = brain or NexusBrain()
         self.emit = emit_fn or (lambda event, data: None)
         self.plan = []  # List of planned moves
         self.log = []   # Execution log
@@ -62,23 +63,27 @@ class FileOrganizer:
 
         self._emit("scan_count", {"total": total, "message": f"Found {total} files to analyze"})
 
-        for i, file_path in enumerate(all_files):
-            try:
-                plan_item = self._analyze_file(file_path)
-                if plan_item:
-                    self.plan.append(plan_item)
-                    self._emit("file_analyzed", {
-                        "index": i + 1,
-                        "total": total,
-                        "file": file_path.name,
-                        "destination": plan_item["destination_rel"],
-                        "category": plan_item["category"],
-                        "confidence": plan_item["confidence"],
-                        "reasoning": plan_item["reasoning"],
-                        "engine": plan_item.get("engine", "local")
-                    })
-            except Exception as e:
-                self._emit("file_error", {"file": str(file_path), "error": str(e)})
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            for i, file_path in enumerate(all_files):
+                try:
+                    future = pool.submit(self._analyze_file, file_path)
+                    plan_item = future.result(timeout=10)
+                    if plan_item:
+                        self.plan.append(plan_item)
+                        self._emit("file_analyzed", {
+                            "index": i + 1,
+                            "total": total,
+                            "file": file_path.name,
+                            "destination": plan_item["destination_rel"],
+                            "category": plan_item["category"],
+                            "confidence": plan_item["confidence"],
+                            "reasoning": plan_item["reasoning"],
+                            "engine": plan_item.get("engine", "local")
+                        })
+                except FuturesTimeoutError:
+                    self._emit("file_error", {"file": str(file_path), "error": "Analysis timed out (>10s) — skipped"})
+                except Exception as e:
+                    self._emit("file_error", {"file": str(file_path), "error": str(e)})
 
         # Summarize structure
         structure = self.brain.suggest_directory_structure(self.plan)
@@ -162,6 +167,9 @@ class FileOrganizer:
 
         # Cleanup empty source directories
         self._cleanup_empty_dirs()
+
+        # Flush learned decisions to disk in one write (Fix #4)
+        self.brain.save_memory()
 
         result = {
             "moved": moved,

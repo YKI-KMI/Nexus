@@ -8,6 +8,22 @@ import re
 import chardet
 from pathlib import Path
 
+# Fix #6: module-level frozensets instead of functions that rebuild sets every call
+CODE_EXTENSIONS = frozenset({
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h",
+    ".cs", ".go", ".rs", ".rb", ".php", ".swift", ".kt", ".sh", ".bash",
+    ".zsh", ".fish", ".ps1", ".lua", ".r", ".m", ".scala", ".clj",
+    ".ex", ".exs", ".erl", ".hs", ".ml", ".fs", ".fsx", ".vue",
+    ".graphql", ".proto", ".tf", ".hcl", ".bicep"
+})
+
+TEXT_EXTENSIONS = frozenset({
+    ".txt", ".md", ".rst", ".log", ".json", ".yaml", ".yml",
+    ".toml", ".ini", ".cfg", ".conf", ".env", ".xml", ".html",
+    ".css", ".scss", ".sass", ".less", ".sql", ".gitignore",
+    ".makefile", ".dockerfile", ".tex", ".bib", ".tsv", ".csv"
+})
+
 
 def extract_text(file_path: str, max_chars: int = 5000) -> str:
     """
@@ -36,7 +52,7 @@ def extract_text(file_path: str, max_chars: int = 5000) -> str:
             pass
 
     # Code and text files
-    if ext in _code_extensions() or ext in _text_extensions():
+    if ext in CODE_EXTENSIONS or ext in TEXT_EXTENSIONS:
         try:
             return _extract_plaintext(file_path)[:max_chars]
         except Exception:
@@ -130,13 +146,23 @@ def _extract_pptx(file_path: str) -> str:
 
 
 def _extract_plaintext(file_path: str) -> str:
-    """Extract text from plaintext/code files with encoding detection."""
+    """Extract text from plaintext/code files with encoding detection.
+    Fix #7: Try UTF-8 first (covers 95%+ of code/text files) and only
+    fall back to chardet on decode failure to avoid the ~1-5 ms overhead."""
+    # Fast path: try UTF-8 directly
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except UnicodeDecodeError:
+        pass
+
+    # Slow path: detect encoding with chardet
     with open(file_path, "rb") as f:
         raw = f.read(8192)
-    
+
     detected = chardet.detect(raw)
     encoding = detected.get("encoding") or "utf-8"
-    
+
     try:
         with open(file_path, "r", encoding=encoding, errors="replace") as f:
             return f.read()
@@ -151,25 +177,6 @@ def _extract_raw(file_path: str) -> str:
     # Filter printable ASCII
     printable = bytes(b for b in raw if 32 <= b < 127 or b in (9, 10, 13))
     return printable.decode("ascii", errors="replace")
-
-
-def _code_extensions() -> set:
-    return {
-        ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h",
-        ".cs", ".go", ".rs", ".rb", ".php", ".swift", ".kt", ".sh", ".bash",
-        ".zsh", ".fish", ".ps1", ".lua", ".r", ".m", ".scala", ".clj",
-        ".ex", ".exs", ".erl", ".hs", ".ml", ".fs", ".fsx", ".vue",
-        ".graphql", ".proto", ".tf", ".hcl", ".bicep"
-    }
-
-
-def _text_extensions() -> set:
-    return {
-        ".txt", ".md", ".rst", ".log", ".json", ".yaml", ".yml",
-        ".toml", ".ini", ".cfg", ".conf", ".env", ".xml", ".html",
-        ".css", ".scss", ".sass", ".less", ".sql", ".gitignore",
-        ".makefile", ".dockerfile", ".tex", ".bib", ".tsv", ".csv"
-    }
 
 
 def is_binary_only(extension: str) -> bool:

@@ -287,11 +287,15 @@ class NexusBrain:
             return False
 
     def _build_domain_vectors(self):
-        """Pre-compute TF vectors for each domain's keyword set."""
+        """Pre-compute TF vectors and extension sets for each domain's keyword set."""
         self.domain_vectors = {}
+        self.domain_extensions = {}
         for domain, data in DOMAIN_ONTOLOGY.items():
             text = " ".join(data["keywords"] * 3)  # weight keywords heavily
             self.domain_vectors[domain] = simple_tfidf(text)
+            self.domain_extensions[domain] = frozenset(
+                e.lower() for e in data.get("extensions", [])
+            )
 
     def _load_memory(self) -> dict:
         """Load past organization decisions from disk."""
@@ -325,7 +329,6 @@ class NexusBrain:
         })
         # Keep last 1000 decisions
         self.memory["decisions"] = self.memory["decisions"][-1000:]
-        self.save_memory()
 
     def record_correction(self, file_path: str, wrong_dest: str, correct_dest: str):
         """Learn from user corrections."""
@@ -388,7 +391,7 @@ Respond in this exact JSON format (no other text):
                 
             result = subprocess.run(
                 ["ollama", "run", "mistral", prompt],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, timeout=5,
                 startupinfo=startupinfo,
                 encoding="utf-8",
                 errors="replace"
@@ -400,8 +403,11 @@ Respond in this exact JSON format (no other text):
                     data = json.loads(match.group())
                     data["engine"] = "ollama"
                     return data
+            # Non-zero return code — fall back to local for remaining files
+            self.ollama_available = False
         except Exception:
-            pass
+            # Timeout or other error — disable Ollama for this session
+            self.ollama_available = False
         return None
 
     def _local_reason(self, content: str, filename: str, extension: str) -> dict:
@@ -430,7 +436,7 @@ Respond in this exact JSON format (no other text):
             keyword_score = min(len(hits) / 10.0, 1.0)
             
             # Extension bonus
-            ext_bonus = 0.15 if extension.lower() in [e.lower() for e in data.get("extensions", [])] else 0.0
+            ext_bonus = 0.15 if extension.lower() in self.domain_extensions[domain] else 0.0
             
             # Combined score
             domain_scores[domain] = cos_score * 0.5 + keyword_score * 0.4 + ext_bonus
