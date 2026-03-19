@@ -18,7 +18,7 @@ Fully local AI that reads, understands, and organizes your files.
 ## Quick Start for Users
 
 1. **Launch the App:** Simply double-click the `NEXUS.exe` (Windows) or `NEXUS` (Mac/Linux) file. *Note: As it packages an entire intelligence engine locally without cloud reliance, it may take 5–10 seconds to launch the first time.*
-2. **Select a Target:** Click the ** Browse** icon on the screen to use your system's folder picker or manually paste the path of the messy folder directly into the input bar.
+2. **Select a Target:** Click the **Browse** icon on the screen to use your system's folder picker or manually paste the path of the messy folder directly into the input bar.
 3. **Scan:** Click the **Scan** button. NEXUS will securely read through the files using natural language understanding extracting text from PDFs, code, and spreadsheets to conceptually categorize them. *It does not move anything yet!*
 4. **Review & Execute:** Review the generated **Organization Plan** detailing the auto-created folders and classifications. If you like the plan, click **Execute** to instantly sort everything.
 
